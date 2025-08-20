@@ -4,7 +4,6 @@ import { ConfigService } from '@nestjs/config'
 import { Api, Bot, Context } from 'grammy'
 //import { AIService } from '../services/ai.service'
 import { SpeechService } from '../services/speech.service'
-import { ConfigHelperService } from 'src/services/сonfig-helper.service'
 
 @Update() // Этот декоратор указывает, что класс слушает события от Telegram
 @Injectable()
@@ -15,11 +14,17 @@ export class TelegramUpdate {
 		@InjectBot() private readonly bot: Bot<Context>, // Внедрение Telegram-бота
 		private readonly speechService: SpeechService, // Сервис для расшифровки речи
 		//private readonly aiService: AIService, // Сервис для генерации тайм-кодов
-		//private readonly configService: ConfigService
-        private readonly configHelper: ConfigHelperService
+		private readonly configService: ConfigService
 	) {
-		//this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN')
-        this.botToken = this.configHelper.getRequired('TELEGRAM_BOT_TOKEN');
+		this.botToken = this.getRequiredConfig('TELEGRAM_BOT_TOKEN')
+	}
+
+    private getRequiredConfig(key: string): string {
+		const value = this.configService.get<string>(key);
+		if (!value) {
+			throw new Error(`Missing required environment variable: ${key}`);
+		}
+		return value;
 	}
 
 	@Start() // Обрабатывает команду /start
