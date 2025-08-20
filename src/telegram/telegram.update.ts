@@ -95,7 +95,10 @@ export class TelegramUpdate {
 			// await ctx.reply(cost)
 		} catch (error) {
 			clearInterval(interval) // Останавливаем прогресс даже при ошибке
-			console.error('Ошибка при обработке голосового:', error.message)
+            console.error('Ошибка при обработке голосового:', error.message)
+            console.error('error.status', error.status)
+            console.error('error.headers', error.response.headers);
+            console.error('error.data', JSON.stringify(error.response.data))
 			await ctx.reply('⚠️ Ошибка при обработке голосового сообщения.')
 		}
 	}
