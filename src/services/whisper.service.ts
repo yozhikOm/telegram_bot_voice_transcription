@@ -59,42 +59,35 @@ export class WhisperService {
 
     const inputPath = path.join(tempDir, `input_${Date.now()}_${fileName}`);
     const outputPath = path.join(tempDir, `output_${Date.now()}.wav`);
+    
+    Logger.log('Сохраняем временный файл');
+    fs.writeFileSync(inputPath, audioBuffer);
 
-    try {
-      Logger.log('Сохраняем временный файл');
-      fs.writeFileSync(inputPath, audioBuffer);
+    await this.checkFFmpeg();
 
-      await this.checkFFmpeg();
+    Logger.log('Конвертируем в WAV формат (16kHz, mono)');
+    await this.convertAudio(inputPath, outputPath);
 
-      Logger.log('Конвертируем в WAV формат (16kHz, mono)');
-      await this.convertAudio(inputPath, outputPath);
+    Logger.log('Выполняем транскрипцию');
 
-      Logger.log('Выполняем транскрипцию');
-
-      return new Promise((resolve, reject) => {
-        execFile(
-          `${path.join(this.whisperPath, 'whisper-cli.exe')}`,
-          [
-            '-m', this.modelPath,
-            '-f', outputPath,
-            '-l', 'auto'  // Автоматическое определение языка
-          ],
-          (err, stdout, stderr) => {
-            if (err) {
-              Logger.error(err);
-              return reject(err);
-            }
-            resolve(stdout);
-          },
-        );
-      });
-    } catch (error) {
-      this.logger.error(`Transcription failed: ${error.message}`);
-      throw new Error(`Transcription failed: ${error.message}`);
-    } finally {
-      // Очищаем временные файлы
-      //this.cleanupFiles([inputPath, outputPath]);
-    }
+    return new Promise((resolve, reject) => {
+      execFile(
+        `${path.join(this.whisperPath, 'whisper-cli.exe')}`,
+        [
+          '-m', this.modelPath,
+          '-f', outputPath,
+          '-l', 'auto' // Автоматическое определение языка
+        ],
+        (err, stdout, stderr) => {
+          this.cleanupFiles([inputPath, outputPath]);
+          if (err) {
+            Logger.error(err);
+            return reject(err);
+          }
+          resolve(stdout);
+        },
+      );
+    });
   }
 
   private async convertAudio(
@@ -104,48 +97,16 @@ export class WhisperService {
     const command = `ffmpeg -i "${inputPath}" -ar 16000 -ac 1 -c:a pcm_s16le -y "${outputPath}"`;
     await execAsync(command);
   }
-  // private async convertAudio(
-  //   inputPath: string,
-  //   outputPath: string,
-  // ): Promise<void> {
-  //   return new Promise((resolve, reject) => {
-  //     console.log('Запуск FFmpeg...');
 
-  //     const ffmpeg = spawn('ffmpeg', [
-  //       '-i',
-  //       inputPath,
-  //       '-ar',
-  //       '16000',
-  //       '-ac',
-  //       '1',
-  //       '-c:a',
-  //       'pcm_s16le',
-  //       '-y',
-  //       outputPath,
-  //     ]);
-
-  //     // Логируем все выводы
-  //     ffmpeg.stdout.on('data', (data) => {
-  //       console.log('FFmpeg stdout:', data.toString());
-  //     });
-
-  //     ffmpeg.stderr.on('data', (data) => {
-  //       console.log('FFmpeg stderr:', data.toString());
-  //     });
-
-  //     ffmpeg.on('close', (code) => {
-  //       console.log(`FFmpeg завершился с кодом: ${code}`);
-  //       if (code === 0) {
-  //         resolve();
-  //       } else {
-  //         reject(new Error(`FFmpeg exited with code ${code}`));
-  //       }
-  //     });
-
-  //     ffmpeg.on('error', (error) => {
-  //       console.error('Ошибка запуска FFmpeg:', error);
-  //       reject(error);
-  //     });
-  //   });
-  // }
+  private cleanupFiles(filePaths: string[]): void {
+    filePaths.forEach((filePath) => {
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (error) {
+          this.logger.warn(`Failed to cleanup ${filePath}: ${error}`);
+        }
+      }
+    });
+  }
 }
