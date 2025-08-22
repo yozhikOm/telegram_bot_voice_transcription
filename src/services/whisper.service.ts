@@ -1,12 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { exec } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { TELEGRAM_API } from 'src/constants';
 import axios from 'axios';
-import { execFile } from 'child_process';
 
 const execAsync = promisify(exec);
 
@@ -31,22 +30,33 @@ export class WhisperService {
     return value;
   }
 
+  private async checkFFmpeg(): Promise<void> {
+    try {
+      await execAsync('ffmpeg -version');
+      console.log('FFmpeg доступен');
+    } catch (error) {
+      console.error('FFmpeg не установлен или не доступен в PATH');
+      throw error;
+    }
+  }
+
   async transcribeVoice(filePath: string): Promise<string> {
     const fileUrl = `${TELEGRAM_API}/file/bot${this.botToken}/${filePath}`;
-    Logger.log(`fileURL: ${fileUrl}`);
+    const fileName = path.basename(filePath);
+
     const fileResponse = await axios.get(fileUrl, {
       responseType: 'arraybuffer',
     });
 
     const audioBuffer = Buffer.from(fileResponse.data);
 
+    Logger.log('Создаем временную папку, если не существует');
     const tempDir = '/tmp';
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
-      Logger.log(`Directory created: ${tempDir}`);
+      Logger.log(`Папка создана: ${tempDir}`);
     }
 
-    const fileName = path.basename(filePath);
     const inputPath = path.join(tempDir, `input_${Date.now()}_${fileName}`);
     const outputPath = path.join(tempDir, `output_${Date.now()}.wav`);
 
@@ -54,22 +64,26 @@ export class WhisperService {
       Logger.log('Сохраняем временный файл');
       fs.writeFileSync(inputPath, audioBuffer);
 
-      //Logger.log('Конвертируем в WAV формат (16kHz, mono)');
-      //await this.convertAudio(inputPath, outputPath);
+      await this.checkFFmpeg();
+
+      Logger.log('Конвертируем в WAV формат (16kHz, mono)');
+      await this.convertAudio(inputPath, outputPath);
 
       Logger.log('Выполняем транскрипцию');
 
       return new Promise((resolve, reject) => {
         execFile(
           `${path.join(this.whisperPath, 'whisper-cli.exe')}`,
-          ['-m', this.modelPath, '-f', 'sample/sample.wav' /*outputPath*/],
+          [
+            '-m', this.modelPath,
+            '-f', outputPath,
+            '-l', 'auto'  // Автоматическое определение языка
+          ],
           (err, stdout, stderr) => {
             if (err) {
               Logger.error(err);
               return reject(err);
             }
-            Logger.error(stderr);
-            Logger.log(stdout);
             resolve(stdout);
           },
         );
@@ -82,4 +96,56 @@ export class WhisperService {
       //this.cleanupFiles([inputPath, outputPath]);
     }
   }
+
+  private async convertAudio(
+    inputPath: string,
+    outputPath: string,
+  ): Promise<void> {
+    const command = `ffmpeg -i "${inputPath}" -ar 16000 -ac 1 -c:a pcm_s16le -y "${outputPath}"`;
+    await execAsync(command);
+  }
+  // private async convertAudio(
+  //   inputPath: string,
+  //   outputPath: string,
+  // ): Promise<void> {
+  //   return new Promise((resolve, reject) => {
+  //     console.log('Запуск FFmpeg...');
+
+  //     const ffmpeg = spawn('ffmpeg', [
+  //       '-i',
+  //       inputPath,
+  //       '-ar',
+  //       '16000',
+  //       '-ac',
+  //       '1',
+  //       '-c:a',
+  //       'pcm_s16le',
+  //       '-y',
+  //       outputPath,
+  //     ]);
+
+  //     // Логируем все выводы
+  //     ffmpeg.stdout.on('data', (data) => {
+  //       console.log('FFmpeg stdout:', data.toString());
+  //     });
+
+  //     ffmpeg.stderr.on('data', (data) => {
+  //       console.log('FFmpeg stderr:', data.toString());
+  //     });
+
+  //     ffmpeg.on('close', (code) => {
+  //       console.log(`FFmpeg завершился с кодом: ${code}`);
+  //       if (code === 0) {
+  //         resolve();
+  //       } else {
+  //         reject(new Error(`FFmpeg exited with code ${code}`));
+  //       }
+  //     });
+
+  //     ffmpeg.on('error', (error) => {
+  //       console.error('Ошибка запуска FFmpeg:', error);
+  //       reject(error);
+  //     });
+  //   });
+  // }
 }

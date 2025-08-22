@@ -76,15 +76,10 @@ export class TelegramUpdate {
       // const transcription = await this.speechService.transcribeVoice(
       // 	file.file_path!
       // )
-      const transcription = await this.whisperService.transcribeVoice(
-        file.file_path!
-        //file.file_id,
-        //audio.buffer,
-        //audio.originalname,
-        //'ru',
-      );
-      Logger.log('voice transcription:', transcription);
-      // Отправляем текст в OpenAI и получаем тайм-коды + стоимость
+      const transcription = await this.whisperService.transcribeVoice(file.file_path!);
+      Logger.log(`voice transcription: ${transcription}`);
+      
+	  // Отправляем текст в OpenAI и получаем тайм-коды + стоимость
       // const { timestamps, cost } = await this.aiService.generateTimestamps(
       // 	transcription,
       // 	duration
